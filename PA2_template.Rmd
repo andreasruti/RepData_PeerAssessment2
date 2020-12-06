@@ -1,0 +1,192 @@
+---
+title: "Most harmful event-types in the U.S."
+author: "Spongebob_77"
+date: "8 November 2018"
+output:
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Important note
+Due to proxy related issues I couldn't make the upload to RPubs. Also I couldn't
+install LaTeX on the company computer. That's why I upload the html doc.
+
+## Synopsis
+
+Based on the *Storm Data* from NOAA (U.S. National Oceanic and Atmospheric 
+Administration's) the main event-types shall be discovered with respect to 
+population health and the economic consequences in the United States. The 
+dataset contains information within a timeframe from 1950 till 2011. Due to 
+reasons of data quality only the years 1992 till 2011 are used to answer the 
+upper question. It turns out that tornados and lightnings are most harmful with 
+respect to population health while floods, flashfloods and tornados cause the 
+most economic damage.
+
+## Data Preprocessing
+
+### Libreries
+
+First we load the libraries that are needed in this analysis.
+
+```{r, libraries, echo=TRUE}
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(stringr)
+```
+
+### Read in Data
+
+The data is in a *.csv.bz2* file which is read in here. The data can be 
+downloaded on [Coursera](https://www.coursera.org/learn/reproducible-research/peer/OMZ37/course-project-2).
+
+Then we check the dataset with respect to dimension, classes the variables have, 
+and how the first few rows of the dataset look like.
+
+```{r, loadData, echo=TRUE, cache=TRUE}
+# Load the data
+dat_orig <- read.csv("repdata%2Fdata%2FStormData.csv.bz2")
+dat <- dat_orig
+
+# check variables
+dim(dat)
+str(dat)
+head(dat)
+
+```
+
+As we know now how the dataset looks like we can start with the preprocessing.
+
+### Select years
+
+First we have a look how sparse the data is. We might not consider data from the 
+beginning of the tracking since it is written in the assignment that there was 
+more data available from the later years.
+
+```{r yearsConsider, echo=TRUE}
+# extract year and save into new column "year"
+dat$year <- as.numeric(str_sub(dat$BGN_DATE, -12, -8))
+
+# plot the number of datapoints each year contains
+no_datapoints_years <- dat %>% count(year)
+no_datapoints_years
+plot(x = no_datapoints_years$year, 
+     y = no_datapoints_years$n,
+     type = "l",
+     main = "number of datapoints per year",
+     xlab = "year", ylab = "# datapoints")
+
+# only keep the last twenty years of the data base
+dat <- dat %>% filter(year >= 1992)
+```
+
+The data reaches from 1950 till 2011. In the first years the data was very 
+sparse. So we decided to take into account only the last 20 years (1992-2011)
+in which period we consider the data base as sufficient.
+
+### Select main events
+
+The next step is to focus on the main event types - meaning the ones that 
+occure the most. We assume that these events cause the most trouble with regard 
+to population health and economic consequences. We take the variable 
+*INJURIES* to determine the population health and *CROPDMG* to determine 
+the economic consequences.
+
+```{r relevantEvents, echo=TRUE}
+# no. of types of events
+length(unique(dat$EVTYPE))
+
+# check number of occurences of types of events
+no_occ_events <- as.data.frame(sort(table(dat$EVTYPE), decreasing = TRUE))
+head(no_occ_events)
+
+# plot the top 40 events
+barplot(sort(table(dat$EVTYPE), decreasing = TRUE)[1:40],
+        las = 2,
+        main = "sorted frequencies of events between 1992 and 2011 (only top 40)",
+        xlab = "event", ylab = "frequency")
+
+# save types of events with occurrences >= 10k (main-events)
+no_occ_events <- no_occ_events %>% filter(Freq >=10000)
+main_events <- as.character(no_occ_events[, 1])
+main_events
+
+# keep only data containing main-events
+dat <- dat %>% filter(EVTYPE %in% main_events)
+dim(dat)
+
+# only keep relevant variables with respect to health and consequences:
+# envtype, injuries, cropdmg and year
+rel_vars <- colnames(dat)[c(8, 24, 27, 38)]
+dat_final <- dat[, rel_vars]
+dim(dat_final)
+```
+
+It turned out that many of the events are written in different ways (e.g. 
+*TSTM WIND* and *THUNDERSTORM WIND*). Since we only can make assumptions about 
+which events could be unified it was decided to keep them seperated and to 
+consider them as unequal events.
+
+According to the upper barplot we decided to make the cut at 10k events since 
+we only take a look at the events that occur the most. We end up with 12 events 
+in total.
+
+Now we have the final dataset *dat_final* which will be the base for the analysis.
+
+### Formatting
+
+In order to find out which types of events have the biggest effect on 
+population and crop in the United States, we calculate the mean effects per 
+event-type and year.
+
+In the end we will be able to compare the means of all event-types over the 
+years 1992 till 2011.
+
+```{r formatting, echo=TRUE}
+# summarize by event-type and year for injuries and crop damages (means)
+avgEffects <- dat_final %>% group_by(EVTYPE, year) %>% 
+                summarise(Injuries = round(mean(INJURIES), 3),
+                          CropDamage = round(mean(CROPDMG), 3))
+
+head(avgEffects)
+
+# wide to long format for results plot
+avgEffects <- avgEffects %>% tidyr::gather(effectType, meanEffect, Injuries:CropDamage)
+
+head(avgEffects)
+```
+
+## Results
+
+We produce a line plot splitted by crop damage (to detect economic consequences) 
+and by injuries (to detect most harmful event-types for humans).
+
+```{r resultsPlot, echo=TRUE}
+# panel plot
+avgEffects %>% 
+  ggplot(aes(x=year, y=meanEffect, colour=factor(EVTYPE))) + 
+  geom_line() +
+  facet_grid(effectType ~ ., scales="free") +
+  ggtitle("mean effects of top 12 event-types over last 20 years") + 
+  theme(legend.title = element_blank())
+```
+
+If we first take a look at the means from the crop damage we can see that floods 
+have been the main cause in the past 20 years - especially in the early 90's.
+In the years 2005 to 2011 we discover that crop damages were result mainly of 
+floods, flash floods and tornados. Hail is another event that constantly have 
+economic consequences, but way less than the other three events. So **floods, flash floods and tornados can be considered the as the greatest economic threads**.
+
+In 1998 many people in the US were injured as a consequence of a flood. This was 
+the most harmful event between 1992 and 2011. However, in the past few years 
+tornados (especially in 2011) and lightnings have caused many injured people
+quite constantly. So **tornados and lightnings are the biggest threads to the people**.
+
+
+
+
+
+
